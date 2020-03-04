@@ -1676,6 +1676,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         private var factor: Float
         private var value = 1.0f
         override fun getInterpolation(f: Float): Float {
+            if (f == 1f) return 1f
             val f2 = factor * f
             return (
                     if (f2 < 1.0f)

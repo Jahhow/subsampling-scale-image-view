@@ -17,6 +17,7 @@ import java.lang.ref.WeakReference
 import java.net.URLDecoder
 import java.util.*
 import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.math.PI
 
 // rotation inspired by https://github.com/IndoorAtlas/subsampling-scale-image-view/tree/feature_rotation
 open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context, attr: AttributeSet? = null) : ImageView(context, attr) {
@@ -39,12 +40,13 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         private const val ANIMATION_DURATION = 200L
         private const val FLING_DURATION = 300L
         private const val INSTANT_ANIMATION_DURATION = 10L
-        private val TWENTY_DEGREES = Math.toRadians(20.0)
+        private val ROTATION_THRESHOLD = Math.toRadians(10.0).toFloat()
     }
 
     var maxScale = 2f
     var isOneToOneZoomEnabled = false
     var rotationEnabled = true
+    var triggeredRotation = false
     var eagerLoadingEnabled = false
     var debug = false
     var onImageEventListener: OnImageEventListener? = null
@@ -96,7 +98,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     private var vCenterStart: PointF? = null
     private var vCenterStartNow: PointF? = null
     private var vDistStart = 0f
-    private var lastAngle = 0f
+    private var originAngle = 0f
 
     private val quickScaleThreshold: Float
     private var quickScaleLastDistance = 0f
@@ -203,7 +205,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         vCenterStart = null
         vCenterStartNow = null
         vDistStart = 0f
-        lastAngle = 0f
+        originAngle = 0f
         quickScaleLastDistance = 0f
         quickScaleMoved = false
         quickScaleSCenter = null
@@ -387,11 +389,12 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     private fun onTouchEventInternal(event: MotionEvent): Boolean {
         val touchCount = event.pointerCount
         when (event.action) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_1_DOWN, MotionEvent.ACTION_POINTER_2_DOWN -> {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_2_DOWN -> {
                 anim = null
                 parent?.requestDisallowInterceptTouchEvent(true)
                 maxTouchCount = Math.max(maxTouchCount, touchCount)
                 if (touchCount >= 2) {
+                    triggeredRotation = false
                     scaleStart = scale
                     vDistStart = distance(event.getX(0), event.getX(1), event.getY(0), event.getY(1))
                     vTranslateStart!!.set(vTranslate!!.x, vTranslate!!.y)
@@ -399,7 +402,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     viewToSourceCoord(vCenterStart!!, sCenterStart!!)
 
                     if (rotationEnabled) {
-                        lastAngle = Math.atan2((event.getY(0) - event.getY(1)).toDouble(), (event.getX(0) - event.getX(1)).toDouble()).toFloat()
+                        originAngle = Math.atan2((event.getY(0) - event.getY(1)).toDouble(), (event.getX(0) - event.getX(1)).toDouble()).toFloat()
                     }
                 } else if (!isQuickScaling) {
                     vTranslateStart!!.set(vTranslate!!.x, vTranslate!!.y)
@@ -412,16 +415,15 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 if (maxTouchCount > 0) {
                     if (touchCount >= 2) {
                         if (rotationEnabled) {
-                            var angle = Math.atan2((event.getY(0) - event.getY(1)).toDouble(), (event.getX(0) - event.getX(1)).toDouble()).toFloat()
-                            if (Math.abs(lastAngle - angle.toDouble()) > TWENTY_DEGREES) {
-                                if (lastAngle - angle > 0) {
-                                    angle += TWENTY_DEGREES.toFloat()
-                                } else {
-                                    angle -= TWENTY_DEGREES.toFloat()
-                                }
-                                setRotationInternal(imageRotation + angle - lastAngle)
-                                lastAngle = angle
+                            val angle = Math.atan2((event.getY(0) - event.getY(1)).toDouble(), (event.getX(0) - event.getX(1)).toDouble()).toFloat()
+                            if (triggeredRotation) {
+                                setRotationInternal(angle - originAngle)
                                 consumed = true
+                            } else {
+                                if (Math.abs(diffRadian(angle, originAngle)) > ROTATION_THRESHOLD) {
+                                    triggeredRotation = true
+                                    originAngle = diffRadian(angle, imageRotation)
+                                }
                             }
                         }
 
@@ -541,7 +543,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     return true
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_POINTER_2_UP -> {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_2_UP -> {
                 if (isQuickScaling) {
                     isQuickScaling = false
                     if (quickScaleMoved) {
@@ -586,6 +588,16 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             }
         }
         return false
+    }
+
+    /*
+     * r1 and r2 must both be in [-PI,PI]
+     * return an equivalent radian for r1 - r2 but in [-PI,PI] */
+    private fun diffRadian(r1: Float, r2: Float): Float {
+        var a = r1 - r2
+        if (a > PI) a -= (2 * PI).toFloat()
+        else if (a < -PI) a += (2 * PI).toFloat()
+        return a
     }
 
     private fun getClosestRightAngle(degrees: Double) = Math.round(degrees / 90f) * 90.0

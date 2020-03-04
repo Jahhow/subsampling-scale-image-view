@@ -436,7 +436,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                             consumed = true
 
                             val previousScale = scale.toDouble()
-                            scale = Math.min(maxScale, vDistEnd / vDistStart * scaleStart)
+                            scale = vDistEnd / vDistStart * scaleStart
 
                             sourceToViewCoord(sCenterStart!!, vCenterStartNow!!)
 
@@ -1621,7 +1621,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         }
 
         constructor(sCenter: PointF, degrees: Double) {
-            targetScale = scale
+            targetScale = Math.min(scale, maxScale)
             targetSCenter = sCenter
             targetRotation = Math.toRadians(degrees).toFloat()
         }

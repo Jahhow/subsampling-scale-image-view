@@ -39,7 +39,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         private const val TILE_SIZE_AUTO = Integer.MAX_VALUE
         private const val ANIMATION_DURATION = 200L
         private const val FLING_DURATION = 300L
-        private const val INSTANT_ANIMATION_DURATION = 10L
         private val ROTATION_THRESHOLD = Math.toRadians(10.0).toFloat()
     }
 
@@ -1086,12 +1085,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         val fullScale = getFullScale()
 
         if (scale >= fullScale) {
-            val isZoomedIn = height < sHeight * scale && width < sWidth * scale
             val center = viewToSourceCoord(PointF(width / 2f, height / 2f))!!
-            AnimationBuilder(center, rightAngle).apply {
-                duration = if (isZoomedIn) INSTANT_ANIMATION_DURATION else ANIMATION_DURATION
-                start()
-            }
+            AnimationBuilder(center, rightAngle).start()
         } else {
             val center = PointF(sWidth / 2f, sHeight / 2f)
             AnimationBuilder(center, fullScale, rightAngle).start()
@@ -1644,6 +1639,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             if (!skipCenterLimiting) {
                 targetSCenter = limitedSCenter(targetSCenter!!.x, targetSCenter!!.y, targetScale, PointF())
             }
+            if (scale == targetScale && imageRotation == targetRotation && getCenter() == targetSCenter)
+                return
 
             anim = Anim().apply {
                 scaleStart = scale

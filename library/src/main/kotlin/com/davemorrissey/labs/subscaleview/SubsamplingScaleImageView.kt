@@ -478,7 +478,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                             }
 
                             val previousScale = scale.toDouble()
-                            scale = Math.min(maxScale, scale * multiplier)
+                            scale = scale * multiplier
 
                             val vLeftStart = vCenterStart!!.x - vTranslateStart!!.x
                             val vTopStart = vCenterStart!!.y - vTranslateStart!!.y

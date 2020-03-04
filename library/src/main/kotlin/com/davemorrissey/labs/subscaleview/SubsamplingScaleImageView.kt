@@ -5,11 +5,13 @@ import android.graphics.*
 import android.graphics.Paint.Style
 import android.net.Uri
 import android.os.AsyncTask
+import android.provider.Settings
 import android.util.AttributeSet
 import android.util.Log
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.animation.Interpolator
 import android.widget.ImageView
 import java.io.File
 import java.io.UnsupportedEncodingException
@@ -33,11 +35,11 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         private const val ORIENTATION_180 = 180
         private const val ORIENTATION_270 = 270
 
-        private const val EASE_OUT_QUAD = 1
-        private const val EASE_IN_OUT_QUAD = 2
+        private val interpolator = MyInterpolator()
+        private val easeOutInterpolator = EaseOutInterpolator()
 
         private const val TILE_SIZE_AUTO = Integer.MAX_VALUE
-        private const val ANIMATION_DURATION = 200L
+        private const val ANIMATION_DURATION = 350L
         private const val FLING_DURATION = 300L
         private val ROTATION_THRESHOLD = Math.toRadians(10.0).toFloat()
     }
@@ -260,7 +262,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     val sCenterYEnd = (height / 2 - vTranslateEnd.y) / scale
                     AnimationBuilder(PointF(sCenterXEnd, sCenterYEnd)).apply {
                         interruptible = true
-                        easing = EASE_OUT_QUAD
+                        interpolator = easeOutInterpolator
                         duration = FLING_DURATION
                         start()
                     }
@@ -644,15 +646,14 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             }
             vTranslateBefore!!.set(vTranslate)
 
-            var scaleElapsed = System.currentTimeMillis() - anim!!.time
-            val finished = scaleElapsed > anim!!.duration
-            scaleElapsed = Math.min(scaleElapsed, anim!!.duration)
-            scale = ease(anim!!.easing, scaleElapsed, anim!!.scaleStart, anim!!.scaleEnd - anim!!.scaleStart, anim!!.duration, anim!!.scaleEnd)
-
-            val vFocusNowX = ease(anim!!.easing, scaleElapsed, anim!!.vFocusStart!!.x, anim!!.vFocusEnd!!.x - anim!!.vFocusStart!!.x, anim!!.duration, anim!!.vFocusEnd!!.x)
-            val vFocusNowY = ease(anim!!.easing, scaleElapsed, anim!!.vFocusStart!!.y, anim!!.vFocusEnd!!.y - anim!!.vFocusStart!!.y, anim!!.duration, anim!!.vFocusEnd!!.y)
-
-            val easeValue = ease(anim!!.easing, scaleElapsed, anim!!.rotationStart, anim!!.rotationEnd - anim!!.rotationStart, anim!!.duration, anim!!.rotationEnd)
+            val timeElapsed = System.currentTimeMillis() - anim!!.time
+            val finished = timeElapsed >= anim!!.duration
+            val elapsed = Math.min(timeElapsed.toFloat() / anim!!.duration, 1f)
+            val interpolation = anim!!.interpolator.getInterpolation(elapsed)
+            scale = ease(interpolation, anim!!.scaleStart, anim!!.scaleEnd - anim!!.scaleStart)
+            val vFocusNowX = ease(interpolation, anim!!.vFocusStart!!.x, anim!!.vFocusEnd!!.x - anim!!.vFocusStart!!.x)
+            val vFocusNowY = ease(interpolation, anim!!.vFocusStart!!.y, anim!!.vFocusEnd!!.y - anim!!.vFocusStart!!.y)
+            val easeValue = ease(interpolation, anim!!.rotationStart, anim!!.rotationEnd - anim!!.rotationStart)
             setRotationInternal(easeValue)
 
             val animVCenterEnd = sourceToViewCoord(anim!!.sCenterEnd!!)
@@ -1529,30 +1530,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         return newTargetScale
     }
 
-    private fun ease(type: Int, time: Long, from: Float, change: Float, duration: Long, finalValue: Float): Float {
-        return if (time == duration) {
-            finalValue
-        } else {
-            when (type) {
-                EASE_OUT_QUAD -> easeOutQuad(time, from, change, duration)
-                else -> easeInOutQuad(time, from, change, duration)
-            }
-        }
-    }
-
-    private fun easeOutQuad(time: Long, from: Float, change: Float, duration: Long): Float {
-        val progress = time.toFloat() / duration.toFloat()
-        return -change * progress * (progress - 2) + from
-    }
-
-    private fun easeInOutQuad(time: Long, from: Float, change: Float, duration: Long): Float {
-        var timeF = time / (duration / 2f)
-        return if (timeF < 1) {
-            change / 2f * timeF * timeF + from
-        } else {
-            timeF--
-            -change / 2f * (timeF * (timeF - 2) - 1) + from
-        }
+    private fun ease(f: Float, from: Float, change: Float): Float {
+        return from + change * f
     }
 
     private fun debug(message: String) {
@@ -1606,8 +1585,9 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         private val targetScale: Float
         private var targetSCenter: PointF?
         private var targetRotation = imageRotation
-        var duration = ANIMATION_DURATION
-        var easing = EASE_IN_OUT_QUAD
+        var duration: Long = (ANIMATION_DURATION * Settings.Global.getFloat(context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f)).toLong()
+        var interpolator: Interpolator = SubsamplingScaleImageView.interpolator
         var interruptible = false
 
         constructor(sCenter: PointF) {
@@ -1647,7 +1627,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 scaleEnd = targetScale
                 rotationStart = imageRotation
                 rotationEnd = targetRotation
-                time = System.currentTimeMillis()
                 sCenterEndRequested = targetSCenter
                 sCenterStart = getCenter()
                 sCenterEnd = targetSCenter
@@ -1656,12 +1635,10 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                         vxCenter.toFloat(),
                         vyCenter.toFloat()
                 )
-                time = System.currentTimeMillis()
+                interpolator = this@AnimationBuilder.interpolator
+                duration = this@AnimationBuilder.duration
+                interruptible = this@AnimationBuilder.interruptible
             }
-
-            anim!!.duration = duration
-            anim!!.interruptible = interruptible
-            anim!!.easing = easing
 
             invalidate()
         }
@@ -1689,10 +1666,34 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         var sCenterEndRequested: PointF? = null
         var vFocusStart: PointF? = null
         var vFocusEnd: PointF? = null
-        var duration = ANIMATION_DURATION
+        var duration: Long = 0
         var interruptible = true
-        var easing = EASE_IN_OUT_QUAD
+        lateinit var interpolator: Interpolator
         var time = System.currentTimeMillis()
+    }
+
+    class MyInterpolator @JvmOverloads constructor(factor: Float = 6.0f) : Interpolator {
+        private var factor: Float
+        private var value = 1.0f
+        override fun getInterpolation(f: Float): Float {
+            val f2 = factor * f
+            return (
+                    if (f2 < 1.0f)
+                        f2 - (1.0f - Math.exp((-f2).toDouble()).toFloat())
+                    else (1.0f - Math.exp((1.0f - f2).toDouble()).toFloat()) * (1.0f - 0.36787945f) + 0.36787945f
+                    ) * value
+        }
+
+        init {
+            this.factor = factor
+            value = 1.0f / getInterpolation(1.0f)
+        }
+    }
+
+    class EaseOutInterpolator() : Interpolator {
+        override fun getInterpolation(input: Float): Float {
+            return input * (2 - input)
+        }
     }
 
     interface OnImageEventListener {

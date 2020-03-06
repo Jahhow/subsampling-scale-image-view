@@ -36,11 +36,11 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         private const val ORIENTATION_270 = 270
 
         private val interpolator = ExpInterpolator()
-        private val easeOutInterpolator = EaseOutInterpolator()
+        private val easeOutInterpolator = ExpEaseOutInterpolator()
 
         private const val TILE_SIZE_AUTO = Integer.MAX_VALUE
         private const val ANIMATION_DURATION = 366L
-        private const val FLING_DURATION = 300L
+        private const val FLING_DURATION = 1000L
         private val ROTATION_THRESHOLD = Math.toRadians(10.0).toFloat()
     }
 
@@ -1658,20 +1658,22 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     }
 
     class ExpInterpolator @JvmOverloads constructor(private var factor: Float = 6.0f) : Interpolator {
-        private val a = 1 / (1.0f - Math.exp(1.0 - factor))
+        private val a = 1 / (1.0 - Math.exp(1.0 - factor))
         override fun getInterpolation(f: Float): Float {
             if (f == 1f) return 1f
             val f2 = (factor * f).toDouble()
             return (
-                    if (f2 < 1.0) f2 - (1.0f - Math.exp(-f2))
-                    else Math.exp(-1.0) + (1.0 - Math.exp(-1.0)) * ((1.0f - Math.exp(1.0 - f2)) * a)
+                    if (f2 < 1.0) f2 - (1.0 - Math.exp(-f2))
+                    else Math.exp(-1.0) + (1.0 - Math.exp(-1.0)) * ((1.0 - Math.exp(1.0 - f2)) * a)
                     ).toFloat()
         }
     }
 
-    class EaseOutInterpolator() : Interpolator {
+    class ExpEaseOutInterpolator(val factor: Double = 7.0) : Interpolator {
+        private val a = 1 / (1.0 - Math.exp(-factor))
         override fun getInterpolation(input: Float): Float {
-            return input * (2 - input)
+            if (input == 1f) return 1f
+            return ((1.0 - Math.exp(-factor * input.toDouble())) * a).toFloat()
         }
     }
 

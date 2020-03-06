@@ -35,7 +35,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         private const val ORIENTATION_180 = 180
         private const val ORIENTATION_270 = 270
 
-        private val interpolator = MyInterpolator()
+        private val interpolator = ExpInterpolator()
         private val easeOutInterpolator = EaseOutInterpolator()
 
         private const val TILE_SIZE_AUTO = Integer.MAX_VALUE
@@ -514,7 +514,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                             if (!didZoomInGesture && scale >= getFullScale()) {
                                 fitToBounds()
                             }
-                            Log.i(TAG, "vTranslate, $vTranslate")
 
                             val degrees = Math.toDegrees(imageRotation.toDouble())
                             val rightAngle = getClosestRightAngle(degrees)
@@ -735,7 +734,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 }
                 postRotate(Math.toDegrees(imageRotation.toDouble()).toFloat(), width / 2f, height / 2f)
             }
-
 
             canvas.drawBitmap(bitmap!!, objectMatrix!!, bitmapPaint)
         }
@@ -1659,22 +1657,15 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         var time = System.currentTimeMillis()
     }
 
-    class MyInterpolator @JvmOverloads constructor(factor: Float = 6.0f) : Interpolator {
-        private var factor: Float
-        private var value = 1.0f
+    class ExpInterpolator @JvmOverloads constructor(private var factor: Float = 6.0f) : Interpolator {
+        private val a = 1 / (1.0f - Math.exp(1.0 - factor))
         override fun getInterpolation(f: Float): Float {
             if (f == 1f) return 1f
-            val f2 = factor * f
+            val f2 = (factor * f).toDouble()
             return (
-                    if (f2 < 1.0f)
-                        f2 - (1.0f - Math.exp((-f2).toDouble()).toFloat())
-                    else (1.0f - Math.exp((1.0f - f2).toDouble()).toFloat()) * (1.0f - 0.36787945f) + 0.36787945f
-                    ) * value
-        }
-
-        init {
-            this.factor = factor
-            value = 1.0f / getInterpolation(1.0f)
+                    if (f2 < 1.0) f2 - (1.0f - Math.exp(-f2))
+                    else Math.exp(-1.0) + (1.0 - Math.exp(-1.0)) * ((1.0f - Math.exp(1.0 - f2)) * a)
+                    ).toFloat()
         }
     }
 

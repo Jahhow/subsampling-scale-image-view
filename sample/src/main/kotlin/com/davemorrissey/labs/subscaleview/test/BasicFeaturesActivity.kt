@@ -7,7 +7,8 @@ import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.pages_activity.*
 
 class BasicFeaturesActivity : AppCompatActivity() {
-    val images = listOf("sanmartino 2000x1334.jpg", "card.png", "card 125x100.png")
+    val images = listOf("sanmartino 2000x1334.jpg", "card.png", "card 125x100.png",
+            "sanmartino_3x8.jpg")
     var index = 0
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {

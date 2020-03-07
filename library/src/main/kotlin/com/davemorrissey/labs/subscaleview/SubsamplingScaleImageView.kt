@@ -1074,15 +1074,9 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         isPanning = false
         val degrees = Math.toDegrees(imageRotation.toDouble())
         val rightAngle = getClosestRightAngle(degrees)
-        val fullScale = getFullScale()
 
-        if (scale >= fullScale) {
-            val center = viewToSourceCoord(width / 2f, height / 2f)!!
-            AnimationBuilder(center, rightAngle).start()
-        } else {
-            val center = PointF(sWidth / 2f, sHeight / 2f)
-            AnimationBuilder(center, fullScale, rightAngle).start()
-        }
+        val center = viewToSourceCoord(width / 2f, height / 2f)!!
+        AnimationBuilder(center, rightAngle).start()
     }
 
     private fun getFullScale(): Float {

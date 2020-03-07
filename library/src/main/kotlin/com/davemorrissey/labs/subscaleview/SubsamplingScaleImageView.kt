@@ -35,8 +35,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         private const val ORIENTATION_180 = 180
         private const val ORIENTATION_270 = 270
 
-        private val interpolator = ExpInterpolator()
-        private val easeOutInterpolator = ExpEaseOutInterpolator()
+        private val interpolator = SigmoidInterpolator()
+        private val easeOutInterpolator = SigmoidInterpolator(7.0, 0.0)
 
         private const val TILE_SIZE_AUTO = Integer.MAX_VALUE
         private const val ANIMATION_DURATION = 366L
@@ -1621,8 +1621,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 sCenterEnd = targetSCenter
                 vFocusStart = sourceToViewCoord(targetSCenter)
                 vFocusEnd = PointF(
-                        vxCenter.toFloat(),
-                        vyCenter.toFloat()
+                        vxCenter,
+                        vyCenter
                 )
                 interpolator = this@AnimationBuilder.interpolator
                 duration = this@AnimationBuilder.duration
@@ -1661,23 +1661,25 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         var time = System.currentTimeMillis()
     }
 
-    class ExpInterpolator @JvmOverloads constructor(private var factor: Float = 6.0f) : Interpolator {
-        private val a = 1 / (1.0 - Math.exp(1.0 - factor))
-        override fun getInterpolation(f: Float): Float {
-            if (f == 1f) return 1f
-            val f2 = (factor * f).toDouble()
-            return (
-                    if (f2 < 1.0) f2 - (1.0 - Math.exp(-f2))
-                    else Math.exp(-1.0) + (1.0 - Math.exp(-1.0)) * ((1.0 - Math.exp(1.0 - f2)) * a)
-                    ).toFloat()
-        }
-    }
+    class SigmoidInterpolator @JvmOverloads
+    constructor(easeOut: Double = 6.0, easeIn: Double = 1.0) : Interpolator {
+        private val xStart = -easeIn
+        private val xEnd = easeOut
+        private val xDiff = xEnd - xStart
+        private val yStart = sigmoid(xStart)
+        private val yEnd = sigmoid(xEnd)
+        private val yDiff = yEnd - yStart
+        private val yScale = 1 / yDiff
 
-    class ExpEaseOutInterpolator(val factor: Double = 7.0) : Interpolator {
-        private val a = 1 / (1.0 - Math.exp(-factor))
         override fun getInterpolation(input: Float): Float {
             if (input == 1f) return 1f
-            return ((1.0 - Math.exp(-factor * input.toDouble())) * a).toFloat()
+            val x = xStart + (xDiff * input)
+            return ((sigmoid(x) - yStart) * yScale).toFloat()
+        }
+
+        fun sigmoid(x: Double): Double {
+            if (x <= 0) return Math.exp(x)
+            else return 2 - Math.exp(-x)
         }
     }
 

@@ -75,7 +75,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
 
     private var vTranslate = PointF(0f, 0f)
     private var vTranslateStart: PointF? = null
-    private var vTranslateBefore: PointF = PointF(0f, 0f)
 
     private var pendingScale: Float? = null
     private var sPendingCenter: PointF? = null
@@ -366,7 +365,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             vCenterStartNow = PointF(0f, 0f)
         }
 
-        vTranslateBefore.set(vTranslate)
         return onTouchEventInternal(event) || super.onTouchEvent(event)
     }
 
@@ -496,22 +494,29 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                             val dxR = (dx * cos - dy * -sin).toFloat()
                             val dyR = (dx * -sin + dy * cos).toFloat()
 
+                            val lastX = vTranslate.x
+                            val lastY = vTranslate.y
+
                             vTranslate.x = vTranslateStart!!.x + dxR
                             vTranslate.y = vTranslateStart!!.y + dyR
 
-                            val lastX = vTranslate.x
-                            val lastY = vTranslate.y
-                            fitToBounds()
+                            val newX = vTranslate.x
+                            val newY = vTranslate.y
+                            fitToBounds(false)
 
                             val degrees = Math.toDegrees(imageRotation.toDouble())
                             val rightAngle = getClosestRightAngle(degrees)
-                            val atXEdge = if (rightAngle == 90.0 || rightAngle == 270.0) lastY != vTranslate.y else lastX != vTranslate.x
-                            val atYEdge = if (rightAngle == 90.0 || rightAngle == 270.0) lastX != vTranslate.x else lastY != vTranslate.y
+                            val atXEdge = if (rightAngle == 90.0 || rightAngle == 270.0) newY != satTemp.vTranslate.y else newX != satTemp.vTranslate.x
+                            val atYEdge = if (rightAngle == 90.0 || rightAngle == 270.0) newX != satTemp.vTranslate.x else newY != satTemp.vTranslate.y
                             val edgeXSwipe = atXEdge && dxA > dyA && !isPanning
                             val edgeYSwipe = atYEdge && dyA > dxA && !isPanning
                             if (!edgeXSwipe && !edgeYSwipe && (!atXEdge || !atYEdge || isPanning)) {
                                 isPanning = true
                             } else if ((dxA > offset && atXEdge && dxA > dyA) || (dyA > offset && atYEdge && dyA > dxA)) {
+                                vTranslate.x = lastX
+                                vTranslate.y = lastY
+                                if (atXEdge) vTranslate.x = satTemp.vTranslate.x
+                                if (atYEdge) vTranslate.y = satTemp.vTranslate.y
                                 maxTouchCount = 0
                                 Log.i(TAG, "maxTouchCount = 0")
                                 parent?.requestDisallowInterceptTouchEvent(false)
@@ -551,6 +556,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     }
 
                     if (touchCount == 1) {
+                        animateToBounds()
                         isZooming = false
                         maxTouchCount = 0
                     }
@@ -622,8 +628,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         }
 
         if (anim != null && anim!!.vFocusStart != null) {
-            vTranslateBefore.set(vTranslate)
-
             val timeElapsed = System.currentTimeMillis() - anim!!.time
             val elapsed = Math.min(timeElapsed.toFloat() / anim!!.duration, 1f)// in range of [0,1]
             val finished = elapsed == 1f
@@ -1036,14 +1040,16 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         sat.scale = scale
     }
 
-    private fun fitToBounds() {
+    private fun fitToBounds(apply: Boolean = true) {
         satTemp.scale = scale
         satTemp.vTranslate.set(vTranslate)
         satTemp.rotate = imageRotation
         fitToBounds(satTemp)
-        scale = satTemp.scale
-        vTranslate.set(satTemp.vTranslate)
-        setRotationInternal(satTemp.rotate)
+        if (apply) {
+            scale = satTemp.scale
+            vTranslate.set(satTemp.vTranslate)
+            setRotationInternal(satTemp.rotate)
+        }
     }
 
     private fun animateToBounds() {

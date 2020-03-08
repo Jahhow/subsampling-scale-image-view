@@ -86,7 +86,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     private var isQuickScaling = false
     private var maxTouchCount = 0
     private var didZoomInGesture = false
-    private var ignoreTouches = false
     private var prevDegrees = 0
 
     private var detector: GestureDetector? = null
@@ -328,24 +327,11 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (anim?.interruptible == false || ignoreTouches) {
-            if (event.actionMasked == MotionEvent.ACTION_UP) {
-                isZooming = false
-            }
-
-            ignoreTouches = true
+        if (anim?.interruptible == false) {
             parent?.requestDisallowInterceptTouchEvent(true)
-            if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
-                ignoreTouches = false
-            }
-
             return true
         } else {
             anim = null
-        }
-
-        if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
-            ignoreTouches = false
         }
 
         detector?.onTouchEvent(event)
@@ -372,7 +358,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         val touchCount = event.pointerCount
         when (event.action) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_2_DOWN -> {
-                Log.i(TAG, "DOWN")
                 anim = null
                 parent?.requestDisallowInterceptTouchEvent(true)
                 maxTouchCount = Math.max(maxTouchCount, touchCount)
@@ -518,7 +503,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                                 if (atXEdge) vTranslate.x = satTemp.vTranslate.x
                                 if (atYEdge) vTranslate.y = satTemp.vTranslate.y
                                 maxTouchCount = 0
-                                Log.i(TAG, "maxTouchCount = 0")
                                 parent?.requestDisallowInterceptTouchEvent(false)
                             }
 
@@ -543,7 +527,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 }
 
                 if (touchCount == 1) {
-                    if (didZoomInGesture) {
+                    if (didZoomInGesture || isPanning) {
                         animateToBounds()
                     }
                 }
@@ -556,7 +540,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     }
 
                     if (touchCount == 1) {
-                        animateToBounds()
                         isZooming = false
                         maxTouchCount = 0
                     }
@@ -591,11 +574,10 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
 
     private fun doubleTapZoom(sCenter: PointF?) {
         val fullScale = getFullScale()
-        val targetScale: Float
         var doubleTapZoomScale = limitedScale(doubleTapZoomScale)
         if (doubleTapZoomScale <= fullScale) doubleTapZoomScale = 1f
         val isZoomedOut = isZoomedOut()
-        targetScale =
+        val targetScale =
                 if (isOneToOneZoomEnabled) {
                     if (scale == 1f || (scale > fullScale && scale != doubleTapZoomScale)) {
                         fullScale
@@ -951,7 +933,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             refreshRequiredTiles(true)
         }
 
-        Log.i(TAG, "scale $scale")
         fitToBounds()
     }
 

@@ -490,11 +490,13 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                             val lastX = vTranslate.x
                             val lastY = vTranslate.y
 
-                            vTranslate.x = vTranslateStart!!.x + dxR
-                            vTranslate.y = vTranslateStart!!.y + dyR
+                            val newX = vTranslateStart!!.x + dxR
+                            val newY = vTranslateStart!!.y + dyR
 
-                            val newX = vTranslate.x
-                            val newY = vTranslate.y
+                            if (anim == null) {
+                                vTranslate.x = newX
+                                vTranslate.y = newY
+                            }
 
                             if (isPanning) {
                                 if (anim != null) {

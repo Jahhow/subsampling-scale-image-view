@@ -371,13 +371,13 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     anim = null
                 return true
             }
-            MotionEvent.ACTION_POINTER_2_DOWN -> {
+            MotionEvent.ACTION_POINTER_1_DOWN, MotionEvent.ACTION_POINTER_2_DOWN -> {
                 maxTouchCount = Math.max(maxTouchCount, touchCount)
                 anim = null
                 triggeredRotation = false
                 scaleStart = scale
                 vDistStart = distance(event.getX(0), event.getX(1), event.getY(0), event.getY(1))
-                vTranslateStart!!.set(vTranslate.x, vTranslate.y)
+                vTranslateStart!!.set(vTranslate)
                 vCenterStart!!.set((event.getX(0) + event.getX(1)) / 2f, (event.getY(0) + event.getY(1)) / 2f)
                 viewToSourceCoord(vCenterStart!!, sCenterStart!!)
 
@@ -406,7 +406,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                         val vDistEnd = distance(event.getX(0), event.getX(1), event.getY(0), event.getY(1))
                         val vCenterEndX = (event.getX(0) + event.getX(1)) / 2f
                         val vCenterEndY = (event.getY(0) + event.getY(1)) / 2f
-                        if (distance(vCenterStart!!.x, vCenterEndX, vCenterStart!!.y, vCenterEndY) > 5 || Math.abs(vDistEnd - vDistStart) > 5 || isPanning) {
+                        if (isPanning || distance(vCenterStart!!.x, vCenterEndX, vCenterStart!!.y, vCenterEndY) > 5 || Math.abs(vDistEnd - vDistStart) > 5) {
                             did2FingerZoomIn = true
                             twoFingerZooming = true
                             isPanning = true
@@ -554,18 +554,9 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                         val i = if (event.actionIndex == 0) 1 else 0
                         vCenterStart!!.set(event.getX(i), event.getY(i))
                         vTranslateStart!!.set(vTranslate.x, vTranslate.y)
+                        diffMove.set(0f, 0f)
                     } else if (touchCount == 1) {
                         maxTouchCount = 0
-                        anim?.apply {
-                            vFocusStart!!.apply {
-                                x += diffMove.x
-                                y += diffMove.y
-                            }
-                            anim!!.vFocusEnd!!.apply {
-                                x += diffMove.x
-                                y += diffMove.y
-                            }
-                        }
                         isPanning = false
                     }
 
@@ -575,8 +566,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 }
 
                 if (touchCount == 1) {
-                    isPanning = false
                     maxTouchCount = 0
+                    isPanning = false
                 }
                 return true
             }
@@ -600,18 +591,18 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         val fullScale = getFullScale()
         var doubleTapZoomScale = limitedScale(doubleTapZoomScale)
         if (doubleTapZoomScale <= fullScale) doubleTapZoomScale = 1f
-        val isZoomedOut = isZoomedOut()
+        val isToFullScale = isZoomedOut() || anim?.scaleEnd == fullScale
         val targetScale =
                 if (isOneToOneZoomEnabled) {
-                    if (scale == 1f || (scale > fullScale && scale != doubleTapZoomScale)) {
+                    if (scale == 1f || anim?.scaleEnd == 1f || (scale > fullScale && scale != doubleTapZoomScale)) {
                         fullScale
-                    } else if (isZoomedOut) {
+                    } else if (isToFullScale) {
                         doubleTapZoomScale
                     } else {
                         1f
                     }
                 } else {
-                    if (isZoomedOut) doubleTapZoomScale else fullScale
+                    if (isToFullScale) doubleTapZoomScale else fullScale
                 }
         AnimationBuilder(sCenter!!, targetScale).start()
         invalidate()
@@ -634,7 +625,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         }
 
         val degrees = Math.toDegrees(rotationRadian.toDouble()).toFloat()
-        if (anim != null && anim!!.vFocusStart != null) {
+        if (anim != null) {
             val timeElapsed = System.currentTimeMillis() - anim!!.time
             val elapsed = Math.min(timeElapsed.toFloat() / anim!!.duration, 1f)
             val finished = elapsed == 1f
@@ -723,6 +714,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     }
                 }
             }
+            if (debug)
+                canvas.rotate(-degrees, vCenterX, vCenterY)
         } else if (bitmap?.isRecycled == false) {
             val xScale = scale
             val yScale = scale
@@ -749,11 +742,11 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         }
 
         if (debug) {
-            canvas.drawText("Scale: ${String.format(Locale.ENGLISH, "%.2f", scale)} (${String.format(Locale.ENGLISH, "%.2f", getFullScale())} - ${String.format(Locale.ENGLISH, "%.2f", maxScale)})", px(5).toFloat(), px(15).toFloat(), debugTextPaint!!)
-            canvas.drawText("Translate: ${String.format(Locale.ENGLISH, "%.2f", vTranslate.x)}:${String.format(Locale.ENGLISH, "%.2f", vTranslate.y)}", px(5).toFloat(), px(30).toFloat(), debugTextPaint!!)
+            canvas.drawText(String.format(Locale.ENGLISH, "Scale (%.2f - %.2f): %.2f", limitedScale(0f), maxScale, scale), px(5).toFloat(), px(15).toFloat(), debugTextPaint!!)
+            canvas.drawText(String.format(Locale.ENGLISH, "Translate: %.0f, %.0f", vTranslate.x, vTranslate.y), px(5).toFloat(), px(30).toFloat(), debugTextPaint!!)
+            canvas.drawText(String.format(Locale.ENGLISH, "Rotate: %.0f", Math.toDegrees(rotationRadian.toDouble())), px(5).toFloat(), px(45).toFloat(), debugTextPaint!!)
             val center = getCenter()
-
-            canvas.drawText("Source center: ${String.format(Locale.ENGLISH, "%.2f", center!!.x)}:${String.format(Locale.ENGLISH, "%.2f", center.y)}", px(5).toFloat(), px(45).toFloat(), debugTextPaint!!)
+            canvas.drawText(String.format(Locale.ENGLISH, "Source Center: %.0f, %.0f", center!!.x, center.y), px(5).toFloat(), px(60).toFloat(), debugTextPaint!!)
             if (anim != null) {
                 val vCenterStart = sourceToViewCoord(anim!!.svCenterStart!!)
                 val vCenterEndRequested = sourceToViewCoord(anim!!.sCenterEndRequested!!)
@@ -777,7 +770,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
 
             if (quickScaleSCenter != null) {
                 debugLinePaint!!.color = Color.BLUE
-                canvas.drawCircle(sourceToViewX(quickScaleSCenter!!.x), sourceToViewY(quickScaleSCenter!!.y), px(35).toFloat(), debugLinePaint!!)
+                val a = sourceToViewCoord(quickScaleSCenter!!)!!
+                canvas.drawCircle(a.x, a.y, px(35).toFloat(), debugLinePaint!!)
             }
 
             if (quickScaleVStart != null && isQuickScaling) {
@@ -1068,7 +1062,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     }
 
     private fun animateToBounds() {
-        isPanning = false
         val degrees = Math.toDegrees(rotationRadian.toDouble())
         val rightAngle = getClosestRightAngle(degrees)
 
@@ -1406,7 +1399,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
 
     fun viewToSourceCoord(vxy: PointF, sTarget: PointF) = viewToSourceCoord(vxy.x, vxy.y, sTarget)
 
-    fun viewToSourceCoord(vxy: PointF) = viewToSourceCoord(vxy.x, vxy.y, PointF())
+    fun viewToSourceCoord(vxy: PointF) = viewToSourceCoord(vxy.x, vxy.y)
 
     private fun viewToSourceCoord(vx: Float, vy: Float, sTarget: PointF = PointF()): PointF {
 

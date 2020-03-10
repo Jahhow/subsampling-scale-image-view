@@ -495,7 +495,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                             val newX = vTranslateStart!!.x + dxR
                             val newY = vTranslateStart!!.y + dyR
 
-                            if (anim == null) {
+                            if (anim == null || !isPanning) {
                                 vTranslate.x = newX
                                 vTranslate.y = newY
                             }
@@ -514,7 +514,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                                 val atYEdge = if (rightAngle == 90.0 || rightAngle == 270.0) newX != satTemp.vTranslate.x else newY != satTemp.vTranslate.y
                                 val edgeXSwipe = atXEdge && dxA > dyA
                                 val edgeYSwipe = atYEdge && dyA > dxA
-                                if (edgeXSwipe || edgeYSwipe) {
+                                if (edgeXSwipe || edgeYSwipe || (anim != null && anim!!.scaleEnd <= getFullScale())) {
                                     vTranslate.x = if (atXEdge) satTemp.vTranslate.x else lastX
                                     vTranslate.y = if (atYEdge) satTemp.vTranslate.y else lastY
                                     maxTouchCount = 0

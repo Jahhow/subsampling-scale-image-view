@@ -50,7 +50,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     var rotationEnabled = true
     var triggeredRotation = false
     var eagerLoadingEnabled = false
-    var debug = true
+    var debug = false
     var onImageEventListener: OnImageEventListener? = null
     var doubleTapZoomScale = 1f
     var bitmapDecoderFactory: DecoderFactory<out ImageDecoder> = CompatDecoderFactory(SkiaImageDecoder::class.java)
@@ -224,7 +224,10 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 decoderLock.writeLock().unlock()
             }
 
-            bitmap?.recycle()
+            if (bitmap != null) {
+                bitmap!!.recycle()
+                bitmap = null
+            }
 
             prevDegreesInt = 0
             sWidth = 0
@@ -232,7 +235,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             sOrientation = 0
             isReady = false
             isImageLoaded = false
-            bitmap = null
             cos = Math.cos(0.0)
             sin = Math.sin(0.0)
         }
@@ -626,7 +628,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             return
         }
 
-        val degrees = Math.toDegrees(rotationRadian.toDouble()).toFloat()
+        fun getRotationDegrees() = Math.toDegrees(rotationRadian.toDouble()).toFloat()
+        val degrees: Float
         if (anim != null) {
             val timeElapsed = System.currentTimeMillis() - anim!!.time
             val elapsed = Math.min(timeElapsed.toFloat() / anim!!.duration, 1f)
@@ -637,6 +640,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             val newVFocusY = ease(interpolation, anim!!.vFocusStart!!.y, anim!!.vFocusEnd!!.y - anim!!.vFocusStart!!.y, anim!!.vFocusEnd!!.y)
             val rotation = ease(interpolation, anim!!.rotationStart, anim!!.rotationEnd - anim!!.rotationStart, anim!!.rotationEnd)
             setRotationInternal(rotation)
+            degrees = getRotationDegrees()
             // Find out where the focal point is at this scale/rotation then adjust its position to follow the animation path
             val vFocus = sourceToViewCoord(anim!!.sFocus!!)
             var dX = vFocus!!.x - newVFocusX
@@ -655,7 +659,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     vTranslateStart!!.set(vTranslate)
                     vCenterStart!!.set(vCenterBefore)
                 }
-                val degreesInt = degrees.toInt()
+                val degreesInt = Math.round(degrees)
                 if (degreesInt != prevDegreesInt) {
                     var diff = degreesInt - prevDegreesInt
                     if (diff == 270) {
@@ -668,6 +672,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 }
             }
             invalidate()
+        } else {
+            degrees = getRotationDegrees()
         }
 
         if (tileMap != null && getIsBaseLayerReady()) {
@@ -702,7 +708,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                                 ORIENTATION_270 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom)
                             }
                             objectMatrix!!.setPolyToPoly(srcArray, 0, dstArray, 0, 4)
-                            //objectMatrix!!.postRotate(degrees, vCenterX, vCenterY)
                             canvas.drawBitmap(tile.bitmap!!, objectMatrix!!, bitmapPaint)
                             if (debug) {
                                 canvas.drawRect(tile.vRect!!, debugLinePaint!!)

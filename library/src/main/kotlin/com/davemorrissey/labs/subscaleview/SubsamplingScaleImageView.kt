@@ -606,7 +606,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 } else {
                     if (isToFullScale) doubleTapZoomScale else fullScale
                 }
-        AnimationBuilder(sCenter!!, targetScale).start()
+        AnimationBuilder(sCenter!!, targetScale, getClosestRightAngle(Math.toDegrees(rotationRadian.toDouble()))).start()
         invalidate()
     }
 
@@ -694,6 +694,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 ORIENTATION_270 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom)
                 else -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom)
             }
+
             fun drawTiles(tiles: List<Tile>) {
                 for (tile in tiles) {
                     if (tile.visible) {
@@ -717,7 +718,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     }
                 }
             }
-            
+
             canvas.rotate(degrees, vCenterX, vCenterY)
             if (drawFullImage) drawTiles(tileMap[fullImageSampleSize]!!)
             drawTiles(tileMap[sampleSize]!!)

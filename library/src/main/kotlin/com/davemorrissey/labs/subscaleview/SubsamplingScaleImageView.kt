@@ -596,12 +596,15 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         val isToFullScale = isZoomedOut() || anim?.scaleEnd == fullScale
         val targetScale =
                 if (isOneToOneZoomEnabled) {
-                    if (scale == 1f || anim?.scaleEnd == 1f || (scale > fullScale && scale != doubleTapZoomScale)) {
-                        fullScale
-                    } else if (isToFullScale) {
+                    if (isToFullScale) {
                         doubleTapZoomScale
                     } else {
-                        1f
+                        val isToDoubleTapScale = scale == doubleTapZoomScale || anim?.scaleEnd == doubleTapZoomScale
+                        if (isToDoubleTapScale) {
+                            1f
+                        } else {
+                            fullScale
+                        }
                     }
                 } else {
                     if (isToFullScale) doubleTapZoomScale else fullScale

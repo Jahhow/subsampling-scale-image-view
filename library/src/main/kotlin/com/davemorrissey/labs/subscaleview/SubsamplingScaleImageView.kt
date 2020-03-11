@@ -121,7 +121,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     private var debugLinePaint: Paint? = null
 
     private var satTemp = ScaleTranslateRotate(0f, PointF(0f, 0f), 0f)
-    private var objectMatrix: Matrix? = null
+    private var objectMatrix = Matrix()
     private val srcArray = FloatArray(8)
     private val dstArray = FloatArray(8)
 
@@ -140,13 +140,10 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             return true
         } else if (tileMap != null) {
             var baseLayerReady = true
-            for ((key, value) in tileMap!!) {
-                if (key == fullImageSampleSize) {
-                    for (tile in value) {
-                        if (tile.loading || tile.bitmap == null) {
-                            baseLayerReady = false
-                        }
-                    }
+            for (tile in tileMap!![fullImageSampleSize]!!) {
+                if (tile.bitmap == null) {
+                    baseLayerReady = false
+                    break
                 }
             }
             return baseLayerReady
@@ -214,7 +211,6 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         quickScaleVLastPoint = null
         quickScaleVStart = null
         anim = null
-        objectMatrix = null
 
         if (newImage) {
             uri = null
@@ -677,63 +673,61 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             degrees = getRotationDegrees()
         }
 
+        val tileMap = tileMap
         if (tileMap != null && getIsBaseLayerReady()) {
             val sampleSize = Math.min(fullImageSampleSize, calculateInSampleSize(scale))
             var drawFullImage = false
             if (sampleSize != fullImageSampleSize) {
                 drawFullImage = anim != null
                 if (!drawFullImage)
-                    for (tile in tileMap!![sampleSize]!!) {
-                        if (tile.visible && (tile.loading || tile.bitmap == null)) {
+                    for (tile in tileMap[sampleSize]!!) {
+                        if (tile.visible && tile.bitmap == null) {
                             drawFullImage = true
                             break
                         }
                     }
             }
 
-            canvas.rotate(degrees, vCenterX, vCenterY)
+            fun _setMatrixArray(tile: Tile) = when (getRequiredRotation()) {
+                ORIENTATION_90 -> setMatrixArray(dstArray, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top)
+                ORIENTATION_180 -> setMatrixArray(dstArray, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top)
+                ORIENTATION_270 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom)
+                else -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom)
+            }
             fun drawTiles(tiles: List<Tile>) {
                 for (tile in tiles) {
-                    sourceToViewRect(tile.sRect!!, tile.vRect!!)
-                    if (!tile.loading && tile.bitmap != null) {
-                        if (objectMatrix == null) {
-                            objectMatrix = Matrix()
+                    if (tile.visible) {
+                        sourceToViewRect(tile.sRect!!, tile.vRect!!)
+                        if (tile.bitmap != null) {
+                            objectMatrix.reset()
+                            val bw = tile.bitmap!!.width.toFloat()
+                            val bh = tile.bitmap!!.height.toFloat()
+                            setMatrixArray(srcArray, 0f, 0f, bw, 0f, bw, bh, 0f, bh)
+                            _setMatrixArray(tile)
+                            objectMatrix.setPolyToPoly(srcArray, 0, dstArray, 0, 4)
+                            canvas.drawBitmap(tile.bitmap!!, objectMatrix, bitmapPaint)
                         }
-
-                        objectMatrix!!.reset()
-                        setMatrixArray(srcArray, 0f, 0f, tile.bitmap!!.width.toFloat(), 0f, tile.bitmap!!.width.toFloat(), tile.bitmap!!.height.toFloat(), 0f, tile.bitmap!!.height.toFloat())
-                        when (getRequiredRotation()) {
-                            ORIENTATION_0 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom)
-                            ORIENTATION_90 -> setMatrixArray(dstArray, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top)
-                            ORIENTATION_180 -> setMatrixArray(dstArray, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top)
-                            ORIENTATION_270 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom)
-                        }
-                        objectMatrix!!.setPolyToPoly(srcArray, 0, dstArray, 0, 4)
-                        canvas.drawBitmap(tile.bitmap!!, objectMatrix!!, bitmapPaint)
                         if (debug) {
                             canvas.drawRect(tile.vRect!!, debugLinePaint!!)
+                            canvas.drawText("ISS ${tile.sampleSize} RECT ${tile.sRect!!.top}, ${tile.sRect!!.left}, ${tile.sRect!!.bottom}, ${tile.sRect!!.right}", (tile.vRect!!.left + px(5)), (tile.vRect!!.top + px(15)), debugTextPaint!!)
+                            if (tile.loading) {
+                                canvas.drawText("LOADING", tile.vRect!!.left + px(5), tile.vRect!!.top + px(35), debugTextPaint!!)
+                            }
                         }
-                    } else if (tile.loading && debug) {
-                        canvas.drawText("LOADING", tile.vRect!!.left + px(5), tile.vRect!!.top + px(35), debugTextPaint!!)
-                    }
-                    if (tile.visible && debug) {
-                        canvas.drawText("ISS ${tile.sampleSize} RECT ${tile.sRect!!.top}, ${tile.sRect!!.left}, ${tile.sRect!!.bottom}, ${tile.sRect!!.right}", (tile.vRect!!.left + px(5)), (tile.vRect!!.top + px(15)), debugTextPaint!!)
                     }
                 }
             }
-            if (drawFullImage) drawTiles(tileMap!![fullImageSampleSize]!!)
-            drawTiles(tileMap!![sampleSize]!!)
+            
+            canvas.rotate(degrees, vCenterX, vCenterY)
+            if (drawFullImage) drawTiles(tileMap[fullImageSampleSize]!!)
+            drawTiles(tileMap[sampleSize]!!)
             if (debug)
                 canvas.rotate(-degrees, vCenterX, vCenterY)
         } else if (bitmap?.isRecycled == false) {
             val xScale = scale
             val yScale = scale
 
-            if (objectMatrix == null) {
-                objectMatrix = Matrix()
-            }
-
-            objectMatrix!!.apply {
+            objectMatrix.apply {
                 reset()
                 postScale(xScale, yScale)
                 postRotate(getRequiredRotation().toFloat())
@@ -747,7 +741,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 postRotate(degrees, vCenterX, vCenterY)
             }
 
-            canvas.drawBitmap(bitmap!!, objectMatrix!!, bitmapPaint)
+            canvas.drawBitmap(bitmap!!, objectMatrix, bitmapPaint)
         }
 
         if (debug) {
@@ -899,28 +893,28 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         val sampleSize = Math.min(fullImageSampleSize, calculateInSampleSize(scale))
 
         for ((iSampleSize, tiles) in tileMap!!) {
-            if (iSampleSize == fullImageSampleSize) {
-                tiles[0].visible = true
-            } else if (iSampleSize == sampleSize)
-                for (tile in tiles) {
-                    if (tileVisible(tile)) {
-                        tile.visible = true
-                        if (!tile.loading && tile.bitmap == null && load) {
-                            val task = TileLoadTask(this, decoder!!, tile)
-                            execute(task)
+            if (iSampleSize != fullImageSampleSize) {
+                if (iSampleSize == sampleSize)
+                    for (tile in tiles) {
+                        tile.visible = tileVisible(tile)
+                        if (tile.visible) {
+                            if (!tile.loading && tile.bitmap == null && load) {
+                                val task = TileLoadTask(this, decoder!!, tile)
+                                execute(task)
+                            }
+                        } else if (recycleOtherTiles) {
+                            tile.bitmap?.recycle()
+                            tile.bitmap = null
                         }
-                    } else if (recycleOtherTiles && tile.sampleSize != fullImageSampleSize) {
+                    }
+                else if (recycleOtherSampleSize) {
+                    for (tile in tiles) {
                         tile.visible = false
                         tile.bitmap?.recycle()
                         tile.bitmap = null
                     }
                 }
-            else if (recycleOtherSampleSize)
-                for (tile in tiles) {
-                    tile.visible = false
-                    tile.bitmap?.recycle()
-                    tile.bitmap = null
-                }
+            }
         }
     }
 
@@ -1269,7 +1263,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     if (!view.recycleOtherSampleSize) {
                         view.recycleOtherSampleSize = true
                         view.refreshRequiredTiles(true)
-                    } else if(!view.recycleOtherTiles) {
+                    } else if (!view.recycleOtherTiles) {
                         view.recycleOtherTiles = true
                         view.refreshRequiredTiles(true)
                     }

@@ -113,6 +113,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     private var anim: Anim? = null
     private var isReady = false
     private var isImageLoaded = false
+    private var recycleOtherSampleSize = false
+    private var recycleOtherTiles = false
 
     private var bitmapPaint: Paint? = null
     private var debugTextPaint: Paint? = null
@@ -300,7 +302,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         val sCenter = getCenter()
         if (isReady && sCenter != null) {
-            anim = null
+            stopAnimation()
             pendingScale = scale
             sPendingCenter = sCenter
         }
@@ -370,12 +372,12 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                     vCenterStart!!.set(event.x, event.y)
                 }
                 if (anim?.interruptible == true)
-                    anim = null
+                    stopAnimation()
                 return true
             }
             MotionEvent.ACTION_POINTER_1_DOWN, MotionEvent.ACTION_POINTER_2_DOWN -> {
                 maxTouchCount = Math.max(maxTouchCount, touchCount)
-                anim = null
+                stopAnimation()
                 triggeredRotation = false
                 scaleStart = scale
                 vDistStart = distance(event.getX(0), event.getX(1), event.getY(0), event.getY(1))
@@ -652,9 +654,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             vTranslate.x -= (dX * cos + dY * sin).toFloat()
             vTranslate.y -= (dX * -sin + dY * cos).toFloat()
 
-            refreshRequiredTiles(finished)
             if (finished) {
-                anim = null
+                stopAnimation()
                 if (isPanning) {
                     vTranslateStart!!.set(vTranslate)
                     vCenterStart!!.set(vCenterBefore)
@@ -678,49 +679,50 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
 
         if (tileMap != null && getIsBaseLayerReady()) {
             val sampleSize = Math.min(fullImageSampleSize, calculateInSampleSize(scale))
-            var hasMissingTiles = false
-            for ((key, value) in tileMap!!) {
-                if (key == sampleSize) {
-                    for (tile in value) {
+            var drawFullImage = false
+            if (sampleSize != fullImageSampleSize) {
+                drawFullImage = anim != null
+                if (!drawFullImage)
+                    for (tile in tileMap!![sampleSize]!!) {
                         if (tile.visible && (tile.loading || tile.bitmap == null)) {
-                            hasMissingTiles = true
+                            drawFullImage = true
+                            break
                         }
                     }
-                }
             }
 
             canvas.rotate(degrees, vCenterX, vCenterY)
-            for ((key, value) in tileMap!!) {
-                if (key == sampleSize || hasMissingTiles) {
-                    for (tile in value) {
-                        sourceToViewRect(tile.sRect!!, tile.vRect!!)
-                        if (!tile.loading && tile.bitmap != null) {
-                            if (objectMatrix == null) {
-                                objectMatrix = Matrix()
-                            }
+            fun drawTiles(tiles: List<Tile>) {
+                for (tile in tiles) {
+                    sourceToViewRect(tile.sRect!!, tile.vRect!!)
+                    if (!tile.loading && tile.bitmap != null) {
+                        if (objectMatrix == null) {
+                            objectMatrix = Matrix()
+                        }
 
-                            objectMatrix!!.reset()
-                            setMatrixArray(srcArray, 0f, 0f, tile.bitmap!!.width.toFloat(), 0f, tile.bitmap!!.width.toFloat(), tile.bitmap!!.height.toFloat(), 0f, tile.bitmap!!.height.toFloat())
-                            when (getRequiredRotation()) {
-                                ORIENTATION_0 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom)
-                                ORIENTATION_90 -> setMatrixArray(dstArray, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top)
-                                ORIENTATION_180 -> setMatrixArray(dstArray, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top)
-                                ORIENTATION_270 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom)
-                            }
-                            objectMatrix!!.setPolyToPoly(srcArray, 0, dstArray, 0, 4)
-                            canvas.drawBitmap(tile.bitmap!!, objectMatrix!!, bitmapPaint)
-                            if (debug) {
-                                canvas.drawRect(tile.vRect!!, debugLinePaint!!)
-                            }
-                        } else if (tile.loading && debug) {
-                            canvas.drawText("LOADING", tile.vRect!!.left + px(5), tile.vRect!!.top + px(35), debugTextPaint!!)
+                        objectMatrix!!.reset()
+                        setMatrixArray(srcArray, 0f, 0f, tile.bitmap!!.width.toFloat(), 0f, tile.bitmap!!.width.toFloat(), tile.bitmap!!.height.toFloat(), 0f, tile.bitmap!!.height.toFloat())
+                        when (getRequiredRotation()) {
+                            ORIENTATION_0 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom)
+                            ORIENTATION_90 -> setMatrixArray(dstArray, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top)
+                            ORIENTATION_180 -> setMatrixArray(dstArray, tile.vRect!!.right, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top)
+                            ORIENTATION_270 -> setMatrixArray(dstArray, tile.vRect!!.left, tile.vRect!!.bottom, tile.vRect!!.left, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.top, tile.vRect!!.right, tile.vRect!!.bottom)
                         }
-                        if (tile.visible && debug) {
-                            canvas.drawText("ISS ${tile.sampleSize} RECT ${tile.sRect!!.top}, ${tile.sRect!!.left}, ${tile.sRect!!.bottom}, ${tile.sRect!!.right}", (tile.vRect!!.left + px(5)), (tile.vRect!!.top + px(15)), debugTextPaint!!)
+                        objectMatrix!!.setPolyToPoly(srcArray, 0, dstArray, 0, 4)
+                        canvas.drawBitmap(tile.bitmap!!, objectMatrix!!, bitmapPaint)
+                        if (debug) {
+                            canvas.drawRect(tile.vRect!!, debugLinePaint!!)
                         }
+                    } else if (tile.loading && debug) {
+                        canvas.drawText("LOADING", tile.vRect!!.left + px(5), tile.vRect!!.top + px(35), debugTextPaint!!)
+                    }
+                    if (tile.visible && debug) {
+                        canvas.drawText("ISS ${tile.sampleSize} RECT ${tile.sRect!!.top}, ${tile.sRect!!.left}, ${tile.sRect!!.bottom}, ${tile.sRect!!.right}", (tile.vRect!!.left + px(5)), (tile.vRect!!.top + px(15)), debugTextPaint!!)
                     }
                 }
             }
+            if (drawFullImage) drawTiles(tileMap!![fullImageSampleSize]!!)
+            drawTiles(tileMap!![sampleSize]!!)
             if (debug)
                 canvas.rotate(-degrees, vCenterX, vCenterY)
         } else if (bitmap?.isRecycled == false) {
@@ -896,30 +898,29 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
 
         val sampleSize = Math.min(fullImageSampleSize, calculateInSampleSize(scale))
 
-        tileMap!!.values.forEach {
-            for (tile in it) {
-                if (tile.sampleSize < sampleSize || tile.sampleSize > sampleSize && tile.sampleSize != fullImageSampleSize) {
-                    tile.visible = false
-                    tile.bitmap?.recycle()
-                    tile.bitmap = null
-                }
-
-                if (tile.sampleSize == sampleSize) {
+        for ((iSampleSize, tiles) in tileMap!!) {
+            if (iSampleSize == fullImageSampleSize) {
+                tiles[0].visible = true
+            } else if (iSampleSize == sampleSize)
+                for (tile in tiles) {
                     if (tileVisible(tile)) {
                         tile.visible = true
                         if (!tile.loading && tile.bitmap == null && load) {
                             val task = TileLoadTask(this, decoder!!, tile)
                             execute(task)
                         }
-                    } else if (tile.sampleSize != fullImageSampleSize) {
+                    } else if (recycleOtherTiles && tile.sampleSize != fullImageSampleSize) {
                         tile.visible = false
                         tile.bitmap?.recycle()
                         tile.bitmap = null
                     }
-                } else if (tile.sampleSize == fullImageSampleSize) {
-                    tile.visible = true
                 }
-            }
+            else if (recycleOtherSampleSize)
+                for (tile in tiles) {
+                    tile.visible = false
+                    tile.bitmap?.recycle()
+                    tile.bitmap = null
+                }
         }
     }
 
@@ -944,7 +945,7 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
             }
         }
 
-        val rotation = this.rotationRadian % (Math.PI * 2)
+        val rotation = this.rotationRadian
 
         return when {
             rotation < Math.PI / 2 -> !(corners[0]!!.y > height || corners[1]!!.x < 0 || corners[2]!!.y < 0 || corners[3]!!.x > width)
@@ -1225,8 +1226,8 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         }
 
         override fun doInBackground(vararg params: Void): Bitmap? {
+            val view = viewRef.get()
             try {
-                val view = viewRef.get()
                 val decoder = decoderRef.get()
                 val tile = tileRef.get()
                 if (decoder != null && tile != null && view != null && decoder.isReady() && tile.visible) {
@@ -1257,13 +1258,21 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         }
 
         override fun onPostExecute(bitmap: Bitmap?) {
-            val subsamplingScaleImageView = viewRef.get()
+            val view = viewRef.get()
             val tile = tileRef.get()
-            if (subsamplingScaleImageView != null && tile != null) {
+            if (view != null && tile != null) {
                 if (bitmap != null) {
                     tile.bitmap = bitmap
                     tile.loading = false
-                    subsamplingScaleImageView.onTileLoaded()
+                    view.onTileLoaded()
+                } else if (exception?.cause is OutOfMemoryError) {
+                    if (!view.recycleOtherSampleSize) {
+                        view.recycleOtherSampleSize = true
+                        view.refreshRequiredTiles(true)
+                    } else if(!view.recycleOtherTiles) {
+                        view.recycleOtherTiles = true
+                        view.refreshRequiredTiles(true)
+                    }
                 }
             }
         }
@@ -1396,12 +1405,12 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         debugLinePaint = null
     }
 
-    private fun viewToSourceX(vx: Float): Float {
-        return (vx - vTranslate.x) / scale
+    private fun viewToSourceX(vx: Float, tx: Float = vTranslate.x, scale: Float = this.scale): Float {
+        return (vx - tx) / scale
     }
 
-    private fun viewToSourceY(vy: Float): Float {
-        return (vy - vTranslate.y) / scale
+    private fun viewToSourceY(vy: Float, ty: Float = vTranslate.y, scale: Float = this.scale): Float {
+        return (vy - ty) / scale
     }
 
     fun viewToSourceCoord(vxy: PointF, sTarget: PointF) = viewToSourceCoord(vxy.x, vxy.y, sTarget)
@@ -1595,6 +1604,22 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
                 interruptible = this@AnimationBuilder.interruptible
             }
 
+            val tx = vTranslate.x
+            val ty = vTranslate.y
+
+            scale = targetScale
+            setRotationInternal(targetRotation)
+            val vFocus = sourceToViewCoord(anim!!.sFocus!!)
+            var dX = vFocus!!.x - anim!!.vFocusEnd!!.x
+            var dY = vFocus.y - anim!!.vFocusEnd!!.y
+            vTranslate.x -= (dX * cos + dY * sin).toFloat()
+            vTranslate.y -= (dX * -sin + dY * cos).toFloat()
+            refreshRequiredTiles(true)
+
+            scale = anim!!.scaleStart
+            setRotationInternal(anim!!.rotationStart)
+            vTranslate.set(tx, ty)
+
             invalidate()
         }
     }
@@ -1625,6 +1650,11 @@ open class SubsamplingScaleImageView @JvmOverloads constructor(context: Context,
         var interruptible = false
         lateinit var interpolator: Interpolator
         var time = System.currentTimeMillis()
+    }
+
+    fun stopAnimation() {
+        anim = null
+        refreshRequiredTiles(true)
     }
 
     class SigmoidInterpolator @JvmOverloads
